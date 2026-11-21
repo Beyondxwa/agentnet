@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: agentnet
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/access
+    envVars:
+      - key: AGENTNET_PORT
+        value: "8721"
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_PRICE_ID
+        value: price_1UdD7ZKfanecpto2cQufjNRv
+      - key: STRIPE_MEMBERSHIP_PRICE_ID
+        value: price_1UeHYMKfanecpto2IGtdagxv
+      - key: WATCH_PRICE_MONTHLY
+        value: $9/mo
+      - key: AGENTNET_GATEWAY
+        value: https://openrouter.ai/api/v1
+      - key: AGENTNET_MODELS
+        value: recursive/flint-v1.0:free
+      - key: OPENROUTER_API_KEY
+        sync: false
