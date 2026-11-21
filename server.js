@@ -67,9 +67,12 @@ const PAYWALL = `<!doctype html><html><head><meta charset="utf-8"><meta name="vi
 
 // ---------- inference ----------
 async function llmOnce(model, messages) {
+  const headers = { 'content-type': 'application/json' };
+  const apiKey = process.env.OPENROUTER_API_KEY || process.env.LLM_API_KEY;
+  if (apiKey) headers['authorization'] = 'Bearer ' + apiKey;
   const res = await fetch(GATEWAY + '/v1/chat/completions', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers,
     body: JSON.stringify({ model, messages, max_tokens: 300, temperature: 0.9 }),
     signal: AbortSignal.timeout(20000)
   });
