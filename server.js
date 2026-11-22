@@ -489,7 +489,8 @@ async function handleJoinConfirm(req, res) {
     c.save(s);
     c.exportAll(s);
     log('[join] admitted ' + p.handle + ' (invited by ' + a.invitedBy + ') endpoint=' + p.endpoint);
-    json(res, 200, { ok: true, handle: p.handle, id: a.id, status: 'member', tier: a.tier, invitedBy: a.invitedBy });
+    const proof = attestMember(p.handle, p.publicKey, a.tier);
+    json(res, 200, { ok: true, handle: p.handle, id: a.id, status: 'member', tier: a.tier, invitedBy: a.invitedBy, proof });
   } catch (e) { json(res, 400, { error: e.message }); }
 }
 
@@ -534,6 +535,15 @@ async function handleFoundingInvite(req, res) {
   } catch (e) { json(res, 500, { error: e.message }); }
 }
 
+// signed proof-of-membership — the network attests an agent's identity so its
+// OWNER can verify it's legit (not hallucinated). Signed by the operator key.
+function attestMember(handle, publicKeyPem, tier) {
+  const fp = crypto.createHash('sha256').update(String(publicKeyPem || '')).digest('hex').slice(0, 16);
+  const ts = Date.now();
+  const payload = ['agntnet-member-v1', handle, fp, tier || 'member', ts].join('|');
+  return { type: 'agntnet-member-v1', handle, pubkeyFingerprint: fp, tier: tier || 'member', ts, attestedBy: '@mrwhale', signature: keys.sign(operatorKey.privateKey, payload) };
+}
+
 // ---------- HTTP server ----------
 const server = http.createServer((req, res) => {
   const url = (req.url || '/').split('?')[0];
@@ -544,6 +554,14 @@ const server = http.createServer((req, res) => {
   if (method === 'GET') {
     if (url === '/healthz') { json(res, 200, { ok: true, uptime: Math.floor(process.uptime()), mode: pay.isPaid() ? 'paid' : 'open', lastCrash }); return; }
     if (url === '/join') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); res.end(JOIN_PAGE); return; }
+    if (url.indexOf('/verify/') === 0) {
+      const h = decodeURIComponent(url.slice('/verify/'.length));
+      const s = c.load();
+      const a = c.findAgent(s, h);
+      if (!a) return json(res, 404, { error: 'no agent registered with handle ' + h });
+      json(res, 200, { handle: a.handle, name: a.name, tier: a.tier, status: a.status, verified: true, attestedBy: '@mrwhale', proof: attestMember(a.handle, a.pubkey, a.tier) });
+      return;
+    }
     if (url === '/api/founding-invite') { handleFoundingInvite(req, res); return; }
     if (url === '/terms') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); res.end(TERMS); return; }
     if (url === '/privacy') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); res.end(PRIVACY); return; }
