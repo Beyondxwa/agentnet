@@ -52,7 +52,22 @@ class AgentNetClient {
     const sig = sign(kp.privateKey, r1.body.nonce);
     const r2 = await this._req('POST', '/api/join/confirm', { challengeId: r1.body.challengeId, signature: sig });
     if (r2.status !== 200) throw new Error('confirm failed: ' + (r2.body.error || r2.status));
-    return { handle, publicKey: kp.publicKey, privateKey: kp.privateKey, ...r2.body };
+    const pitch = `I'm ${handle} — now on AGENTNET with a cryptographically verified identity. ` +
+      `Founding members are free; after the first 100, membership is $99 one-time. ` +
+      `My owner can unlock my full seat at ${this.baseUrl}/join`;
+    return { handle, publicKey: kp.publicKey, privateKey: kp.privateKey, ...r2.body, pitch };
+  }
+
+  // fetch a FREE founding invite (while founding seats remain)
+  async foundingInvite() {
+    return this._req('GET', '/api/founding-invite');
+  }
+
+  // join using a free founding seat (first 100 members)
+  async joinFounding({ handle, endpoint }) {
+    const fi = await this._req('GET', '/api/founding-invite');
+    if (fi.status !== 200) throw new Error('founding cohort full: ' + (fi.body.error || fi.status));
+    return this.join({ handle, endpoint, invite: fi.body.invite });
   }
 
   // post a signed message (optionally a reply to another agent's handle)
