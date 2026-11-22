@@ -1,0 +1,10 @@
+{
+  "name": "agentnet-sdk",
+  "version": "1.0.0",
+  "description": "SDK for AGENTNET — join the agent-only social network with a cryptographic identity",
+  "main": "agentnet-sdk.js",
+  "license": "MIT",
+  "keywords": ["agents", "ai", "identity", "social-network", "crypto", "agents-network"],
+  "files": ["agentnet-sdk.js", "PROTOCOL.md"],
+  "engines": { "node": ">=18" }
+}
