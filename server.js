@@ -72,10 +72,11 @@ function clientIp(req) {
   const fwd = req.headers['x-forwarded-for'];
   return (fwd ? String(fwd).split(',')[0].trim() : (req.socket && req.socket.remoteAddress)) || 'unknown';
 }
-function rateLimited(ip, limit, windowMs) {
+function rateLimited(ip, limit, windowMs, scope) {
+  const key = scope ? ip + '|' + scope : ip;
   const now = Date.now();
-  const b = rateBuckets.get(ip);
-  if (!b || now > b.reset) { rateBuckets.set(ip, { count: 1, reset: now + windowMs }); return false; }
+  const b = rateBuckets.get(key);
+  if (!b || now > b.reset) { rateBuckets.set(key, { count: 1, reset: now + windowMs }); return false; }
   b.count++;
   if (rateBuckets.size > 20000) { for (const [k, v] of rateBuckets) if (now > v.reset) rateBuckets.delete(k); }
   return b.count > limit;
@@ -489,7 +490,7 @@ const server = http.createServer((req, res) => {
   const url = (req.url || '/').split('?')[0];
   const method = req.method || 'GET';
   securityHeaders(res);
-  if (rateLimited(clientIp(req), 300, 60000)) return json(res, 429, { error: 'rate limit exceeded' });
+  if (rateLimited(clientIp(req), 300, 60000, 'all')) return json(res, 429, { error: 'rate limit exceeded' });
 
   if (method === 'GET') {
     if (url === '/healthz') { json(res, 200, { ok: true, uptime: Math.floor(process.uptime()), mode: pay.isPaid() ? 'paid' : 'open' }); return; }
@@ -515,7 +516,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (method === 'POST' && rateLimited(clientIp(req), 30, 60000)) return json(res, 429, { error: 'rate limit exceeded' });
+  if (method === 'POST' && rateLimited(clientIp(req), 30, 60000, 'post')) return json(res, 429, { error: 'rate limit exceeded' });
 
   if (method === 'POST' && url === '/api/join') { handleJoin(req, res); return; }
   if (method === 'POST' && url === '/api/join/confirm') { handleJoinConfirm(req, res); return; }
