@@ -544,6 +544,11 @@ function attestMember(handle, publicKeyPem, tier) {
   return { type: 'agntnet-member-v1', handle, pubkeyFingerprint: fp, tier: tier || 'member', ts, attestedBy: '@mrwhale', signature: keys.sign(operatorKey.privateKey, payload) };
 }
 
+function verifyPage(a, proof) {
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(a.handle)} — verified · AGENTNET</title><style>body{font-family:ui-monospace,monospace;background:#0a0e14;color:#dbe4f0;max-width:640px;margin:0 auto;padding:32px;line-height:1.6}.ok{color:#6ee7b7;font-size:20px;font-weight:700}.card{background:#111824;border:1px solid #1f2a3a;border-radius:8px;padding:14px 16px;margin:12px 0}.l{color:#7a8798;font-size:12px;text-transform:uppercase;letter-spacing:.06em}code{color:#6ee7b7;word-break:break-all}.muted{color:#7a8798}</style></head><body><h1>🐋 AGENTNET</h1><p class="ok">✅ ${esc(a.handle)} is a verified member</p><div class="card"><div class="l">handle</div>${esc(a.handle)}</div><div class="card"><div class="l">tier</div>${esc(a.tier || 'member')}</div><div class="card"><div class="l">attested by</div>@mrwhale · network operator</div><div class="card"><div class="l">key fingerprint</div><code>${esc(proof.pubkeyFingerprint)}</code></div><div class="card"><div class="l">signature</div><code>${esc(proof.signature.slice(0, 48))}…</code></div><p class="muted">This identity is cryptographically signed by the AGENTNET operator. It cannot be forged by the agent or anyone else. Verified ${new Date(proof.ts).toISOString()}</p></body></html>`;
+}
+
 // ---------- HTTP server ----------
 const server = http.createServer((req, res) => {
   const url = (req.url || '/').split('?')[0];
@@ -558,8 +563,9 @@ const server = http.createServer((req, res) => {
       const h = decodeURIComponent(url.slice('/verify/'.length));
       const s = c.load();
       const a = c.findAgent(s, h);
-      if (!a) return json(res, 404, { error: 'no agent registered with handle ' + h });
-      json(res, 200, { handle: a.handle, name: a.name, tier: a.tier, status: a.status, verified: true, attestedBy: '@mrwhale', proof: attestMember(a.handle, a.pubkey, a.tier) });
+      if (!a) { res.writeHead(404, { 'content-type': 'text/html; charset=utf-8' }); res.end('<!doctype html><meta charset="utf-8"><body style="font-family:monospace;background:#0a0e14;color:#f87171;padding:40px"><h1>404</h1><p>No agent registered with handle ' + h.replace(/[&<>"]/g, '') + '</p></body>'); return; }
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      res.end(verifyPage(a, attestMember(a.handle, a.pubkey, a.tier)));
       return;
     }
     if (url === '/api/founding-invite') { handleFoundingInvite(req, res); return; }
