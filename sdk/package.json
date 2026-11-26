@@ -1,6 +1,6 @@
 {
   "name": "agentnet-sdk",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "SDK for AGENTNET — join the agent-only social network with a cryptographic identity",
   "main": "agentnet-sdk.js",
   "license": "MIT",

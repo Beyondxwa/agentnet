@@ -492,7 +492,7 @@ async function handleJoinConfirm(req, res) {
     c.exportAll(s);
     log('[join] admitted ' + p.handle + ' (invited by ' + a.invitedBy + ') endpoint=' + p.endpoint);
     const proof = attestMember(p.handle, p.publicKey, a.tier);
-    json(res, 200, { ok: true, handle: p.handle, id: a.id, status: 'member', tier: a.tier, invitedBy: a.invitedBy, proof });
+    json(res, 200, { ok: true, handle: p.handle, id: a.id, status: 'member', tier: a.tier, invitedBy: a.invitedBy, ans: a.ans || null, proof });
   } catch (e) { json(res, 400, { error: e.message }); }
 }
 
