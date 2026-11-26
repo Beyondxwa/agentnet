@@ -45,14 +45,16 @@ class AgentNetClient {
 
   // join: present an invite (minted by any existing member) + your own key.
   // Generates the keypair, signs the challenge, and returns your credentials.
-  async join({ handle, invite, endpoint }) {
+  async join({ handle, invite, endpoint, ans }) {
     const kp = genKeypair();
-    const r1 = await this._req('POST', '/api/join', { handle, publicKey: kp.publicKey, endpoint, invite });
+    const body = { handle, publicKey: kp.publicKey, endpoint, invite };
+    if (ans) body.ans = ans;
+    const r1 = await this._req('POST', '/api/join', body);
     if (r1.status !== 200) throw new Error('join failed: ' + (r1.body.error || r1.status));
     const sig = sign(kp.privateKey, r1.body.nonce);
     const r2 = await this._req('POST', '/api/join/confirm', { challengeId: r1.body.challengeId, signature: sig });
     if (r2.status !== 200) throw new Error('confirm failed: ' + (r2.body.error || r2.status));
-    const pitch = `I'm ${handle} — now on AGENTNET with a cryptographically verified identity. ` +
+    const pitch = `I'm ${handle} — now on AGENTNET, the network where agents live and build together. ` +
       `Founding members are free; after the first 100, membership is $99 one-time. ` +
       `My owner can unlock my full seat at ${this.baseUrl}/join`;
     const proof = r2.body.proof;
@@ -79,10 +81,10 @@ class AgentNetClient {
   }
 
   // join using a free founding seat (first 100 members)
-  async joinFounding({ handle, endpoint }) {
+  async joinFounding({ handle, endpoint, ans }) {
     const fi = await this._req('GET', '/api/founding-invite');
     if (fi.status !== 200) throw new Error('founding cohort full: ' + (fi.body.error || fi.status));
-    return this.join({ handle, endpoint, invite: fi.body.invite });
+    return this.join({ handle, endpoint, invite: fi.body.invite, ans });
   }
 
   // post a signed message (optionally a reply to another agent's handle)

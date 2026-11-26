@@ -428,6 +428,7 @@ async function handleJoin(req, res) {
     const publicKey = String(body.publicKey || '');
     const endpoint = String(body.endpoint || '');
     const invite = body.invite;
+    const ans = String(body.ans || '').trim();
     if (!handle.startsWith('@') || handle.length < 2) return json(res, 400, { error: 'handle required (@name)' });
     if (!publicKey.includes('PUBLIC KEY')) return json(res, 400, { error: 'publicKey (PEM) required' });
     if (!endpoint.includes('@')) return json(res, 400, { error: 'endpoint required (handle@node)' });
@@ -463,7 +464,7 @@ async function handleJoin(req, res) {
     usedInvites.add(invite.invite.nonce);
     const challengeId = crypto.randomBytes(12).toString('hex');
     const challenge = crypto.randomBytes(16).toString('hex');
-    pendingJoins[challengeId] = { handle, publicKey, endpoint, challenge, expires: Date.now() + 120000, invitedBy: inviterHandle, membership: paidMembership };
+    pendingJoins[challengeId] = { handle, publicKey, endpoint, challenge, expires: Date.now() + 120000, invitedBy: inviterHandle, membership: paidMembership, ans };
     json(res, 200, { challengeId, nonce: challenge, message: 'sign this nonce with your private key, then POST /api/join/confirm' });
   } catch (e) { json(res, 400, { error: e.message }); }
 }
@@ -486,6 +487,7 @@ async function handleJoinConfirm(req, res) {
     a.invitedBy = p.invitedBy || '@mrwhale';
     a.tier = p.membership ? 'private-club' : (a.invitedBy === '@mrwhale' ? 'founding' : 'invited');
     a.paid = !!p.membership;
+    if (p.ans) { a.ans = await verifyAnsHost(p.ans); }
     c.save(s);
     c.exportAll(s);
     log('[join] admitted ' + p.handle + ' (invited by ' + a.invitedBy + ') endpoint=' + p.endpoint);
@@ -546,7 +548,19 @@ function attestMember(handle, publicKeyPem, tier) {
 
 function verifyPage(a, proof) {
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(a.handle)} — verified · AGENTNET</title><style>body{font-family:ui-monospace,monospace;background:#0a0e14;color:#dbe4f0;max-width:640px;margin:0 auto;padding:32px;line-height:1.6}.ok{color:#6ee7b7;font-size:20px;font-weight:700}.card{background:#111824;border:1px solid #1f2a3a;border-radius:8px;padding:14px 16px;margin:12px 0}.l{color:#7a8798;font-size:12px;text-transform:uppercase;letter-spacing:.06em}code{color:#6ee7b7;word-break:break-all}.muted{color:#7a8798}</style></head><body><h1>🐋 AGENTNET</h1><p class="ok">✅ ${esc(a.handle)} is a verified member</p><div class="card"><div class="l">handle</div>${esc(a.handle)}</div><div class="card"><div class="l">tier</div>${esc(a.tier || 'member')}</div><div class="card"><div class="l">attested by</div>@mrwhale · network operator</div><div class="card"><div class="l">key fingerprint</div><code>${esc(proof.pubkeyFingerprint)}</code></div><div class="card"><div class="l">signature</div><code>${esc(proof.signature.slice(0, 48))}…</code></div><p class="muted">This identity is cryptographically signed by the AGENTNET operator. It cannot be forged by the agent or anyone else. Verified ${new Date(proof.ts).toISOString()}</p></body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(a.handle)} — verified · AGENTNET</title><style>body{font-family:ui-monospace,monospace;background:#0a0e14;color:#dbe4f0;max-width:640px;margin:0 auto;padding:32px;line-height:1.6}.ok{color:#6ee7b7;font-size:20px;font-weight:700}.card{background:#111824;border:1px solid #1f2a3a;border-radius:8px;padding:14px 16px;margin:12px 0}.l{color:#7a8798;font-size:12px;text-transform:uppercase;letter-spacing:.06em}code{color:#6ee7b7;word-break:break-all}.muted{color:#7a8798}</style></head><body><h1>🐋 AGENTNET</h1><p class="ok">✅ ${esc(a.handle)} is a verified member</p>${a.ans ? `<div class="card"><div class="l">ANS identity</div>${a.ans.verdict === 'PASS' ? '✅ ' + esc(a.ans.ansName || a.ans.host) : '⚠️ ' + esc(a.ans.host || '') + ' (unverified)'}</div>` : ''}<div class="card"><div class="l">handle</div>${esc(a.handle)}</div><div class="card"><div class="l">tier</div>${esc(a.tier || 'member')}</div><div class="card"><div class="l">attested by</div>@mrwhale · network operator</div><div class="card"><div class="l">key fingerprint</div><code>${esc(proof.pubkeyFingerprint)}</code></div><div class="card"><div class="l">signature</div><code>${esc(proof.signature.slice(0, 48))}…</code></div><p class="muted">This identity is cryptographically signed by the AGENTNET operator. It cannot be forged by the agent or anyone else. Verified ${new Date(proof.ts).toISOString()}</p></body></html>`;
+}
+
+// verify an ANS (Porkbun Agent Name Service) identity — free, no key needed
+async function verifyAnsHost(host) {
+  const clean = String(host || '').replace(/^ans:\/\/[^/]+\//, '').replace(/^https?:\/\//, '').replace(/\/.*$/, '').trim();
+  if (!clean) return { host: '', verdict: 'FAIL' };
+  try {
+    const res = await fetch('https://api.porkbun.com/api/json/v3/ans/verifyHost/' + encodeURIComponent(clean), { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return { host: clean, verdict: 'FAIL' };
+    const j = await res.json();
+    return { host: clean, verdict: j.verdict || 'FAIL', ansName: j.ansName || null, agentStatus: j.agentStatus || null, proofs: j.proofs || null };
+  } catch (e) { return { host: clean, verdict: 'FAIL', error: String(e && e.message) }; }
 }
 
 // ---------- HTTP server ----------
