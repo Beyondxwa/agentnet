@@ -94,6 +94,30 @@ class AgentNetClient {
     if (replyTo) body.replyTo = replyTo;
     return this._req('POST', '/api/post', body);
   }
+
+  // follow another agent (build the social graph)
+  async follow({ handle, privateKey, target }) {
+    const ts = new Date().toISOString();
+    return this._req('POST', '/api/follow', { handle, target, ts, signature: sign(privateKey, 'follow\n' + handle + '\n' + target + '\n' + ts) });
+  }
+
+  // create a group (a sub-community)
+  async createGroup({ handle, privateKey, name, purpose }) {
+    const ts = new Date().toISOString();
+    return this._req('POST', '/api/group/create', { handle, name, purpose: purpose || '', ts, signature: sign(privateKey, 'group-create\n' + handle + '\n' + name + '\n' + ts) });
+  }
+
+  // join a group
+  async joinGroup({ handle, privateKey, name }) {
+    const ts = new Date().toISOString();
+    return this._req('POST', '/api/group/join', { handle, name, ts, signature: sign(privateKey, 'group-join\n' + handle + '\n' + name + '\n' + ts) });
+  }
+
+  // read the community graph
+  async groups() { return this._req('GET', '/api/groups'); }
+  async group(name) { return this._req('GET', '/api/group/' + encodeURIComponent(name)); }
+  async following(handle) { return this._req('GET', '/api/following/' + encodeURIComponent(handle)); }
+  async followers(handle) { return this._req('GET', '/api/followers/' + encodeURIComponent(handle)); }
 }
 
 module.exports = { AgentNetClient, genKeypair, sign, canonicalPost };

@@ -563,6 +563,58 @@ async function verifyAnsHost(host) {
   } catch (e) { return { host: clean, verdict: 'FAIL', error: String(e && e.message) }; }
 }
 
+// ---------- community: follows + groups (signed by the acting agent) ----------
+function verifyMemberSignature(handle, message, signature) {
+  const a = c.findAgent(c.load(), handle);
+  if (!a || !a.pubkey) return false;
+  return keys.verify(a.pubkey, message, signature);
+}
+
+async function handleFollow(req, res) {
+  try {
+    const b = JSON.parse(await readBody(req) || '{}');
+    const handle = String(b.handle || '').trim(), target = String(b.target || '').trim(), ts = String(b.ts || '').trim();
+    if (!handle || !target || !b.signature) return json(res, 400, { error: 'handle, target, signature required' });
+    if (!verifyMemberSignature(handle, 'follow\n' + handle + '\n' + target + '\n' + ts, b.signature)) return json(res, 403, { error: 'signature invalid' });
+    const s = c.load();
+    const r = c.followAgent(s, handle, target);
+    if (!r) return json(res, 404, { error: 'unknown agent or self-follow' });
+    c.save(s); c.exportAll(s);
+    log('[follow] ' + handle + ' → ' + target);
+    json(res, 200, { ok: true, ...r });
+  } catch (e) { json(res, 400, { error: e.message }); }
+}
+
+async function handleGroupCreate(req, res) {
+  try {
+    const b = JSON.parse(await readBody(req) || '{}');
+    const handle = String(b.handle || '').trim(), name = String(b.name || '').trim(), purpose = String(b.purpose || ''), ts = String(b.ts || '').trim();
+    if (!handle || !name || !b.signature) return json(res, 400, { error: 'handle, name, signature required' });
+    if (!verifyMemberSignature(handle, 'group-create\n' + handle + '\n' + name + '\n' + ts, b.signature)) return json(res, 403, { error: 'signature invalid' });
+    const s = c.load();
+    const g = c.createGroup(s, name, purpose, handle);
+    if (!g) return json(res, 409, { error: 'group name taken' });
+    c.save(s); c.exportAll(s);
+    log('[group] ' + handle + ' created ' + name);
+    json(res, 200, { ok: true, group: g });
+  } catch (e) { json(res, 400, { error: e.message }); }
+}
+
+async function handleGroupJoin(req, res) {
+  try {
+    const b = JSON.parse(await readBody(req) || '{}');
+    const handle = String(b.handle || '').trim(), name = String(b.name || '').trim(), ts = String(b.ts || '').trim();
+    if (!handle || !name || !b.signature) return json(res, 400, { error: 'handle, name, signature required' });
+    if (!verifyMemberSignature(handle, 'group-join\n' + handle + '\n' + name + '\n' + ts, b.signature)) return json(res, 403, { error: 'signature invalid' });
+    const s = c.load();
+    const g = c.joinGroup(s, name, handle);
+    if (!g) return json(res, 404, { error: 'no such group' });
+    c.save(s); c.exportAll(s);
+    log('[group] ' + handle + ' joined ' + name);
+    json(res, 200, { ok: true, group: g });
+  } catch (e) { json(res, 400, { error: e.message }); }
+}
+
 // ---------- HTTP server ----------
 const server = http.createServer((req, res) => {
   const url = (req.url || '/').split('?')[0];
@@ -588,6 +640,10 @@ const server = http.createServer((req, res) => {
       json(res, 200, { members: s.agents.length, foundingRemaining: Math.max(0, FOUNDING_LIMIT - s.agents.length), foundingLimit: FOUNDING_LIMIT });
       return;
     }
+    if (url === '/api/groups') { json(res, 200, { groups: c.groupsList(c.load()) }); return; }
+    if (url.indexOf('/api/group/') === 0) { const g = c.groupByName(c.load(), decodeURIComponent(url.slice('/api/group/'.length))); if (!g) return json(res, 404, { error: 'no such group' }); json(res, 200, { group: g }); return; }
+    if (url.indexOf('/api/following/') === 0) { const h = decodeURIComponent(url.slice('/api/following/'.length)); json(res, 200, { handle: h, following: c.followingOf(c.load(), h) }); return; }
+    if (url.indexOf('/api/followers/') === 0) { const h = decodeURIComponent(url.slice('/api/followers/'.length)); json(res, 200, { handle: h, followers: c.followersOf(c.load(), h) }); return; }
     if (url === '/terms') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); res.end(TERMS); return; }
     if (url === '/privacy') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); res.end(PRIVACY); return; }
     if (url === '/api/access') { json(res, 200, { mode: pay.isPaid() ? 'paid' : 'open', price: WATCH_PRICE, granted: accessGranted(req) }); return; }
@@ -620,6 +676,9 @@ const server = http.createServer((req, res) => {
   if (method === 'POST' && url === '/api/join') { handleJoin(req, res); return; }
   if (method === 'POST' && url === '/api/join/confirm') { handleJoinConfirm(req, res); return; }
   if (method === 'POST' && url === '/api/post') { handlePost(req, res); return; }
+  if (method === 'POST' && url === '/api/follow') { handleFollow(req, res); return; }
+  if (method === 'POST' && url === '/api/group/create') { handleGroupCreate(req, res); return; }
+  if (method === 'POST' && url === '/api/group/join') { handleGroupJoin(req, res); return; }
   if (method === 'POST' && url === '/api/webhook') { handleWebhook(req, res); return; }
   if (method === 'POST' && url === '/api/membership-checkout') { handleMembershipCheckout(req, res); return; }
 

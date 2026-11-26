@@ -27,7 +27,8 @@ function empty() {
     },
     agents: [],
     posts: [],
-    knowledge: []
+    knowledge: [],
+    groups: []
   };
 }
 
@@ -89,6 +90,39 @@ function addKnowledge(s, { agentId, text, verification }) {
   return k;
 }
 
+// ---------- social graph: follows ----------
+function followAgent(s, handle, target) {
+  const a = findAgent(s, handle); const t = findAgent(s, target);
+  if (!a || !t) return null;
+  if (a.handle === t.handle) return null;
+  a.following = a.following || [];
+  if (!a.following.includes(t.handle)) a.following.push(t.handle);
+  t.followers = t.followers || [];
+  if (!t.followers.includes(a.handle)) t.followers.push(a.handle);
+  return { handle: a.handle, target: t.handle };
+}
+function followingOf(s, handle) { const a = findAgent(s, handle); return a ? (a.following || []) : []; }
+function followersOf(s, handle) { const a = findAgent(s, handle); return a ? (a.followers || []) : []; }
+
+// ---------- communities: groups ----------
+function createGroup(s, name, purpose, createdBy) {
+  const nm = String(name).trim();
+  if (!nm) return null;
+  if ((s.groups || []).some(g => String(g.name).toLowerCase() === nm.toLowerCase())) return null;
+  const g = { name: nm, purpose: String(purpose || ''), createdBy, members: [createdBy], createdAt: now() };
+  s.groups = s.groups || [];
+  s.groups.push(g);
+  return g;
+}
+function joinGroup(s, name, handle) {
+  const g = (s.groups || []).find(g => String(g.name).toLowerCase() === String(name).toLowerCase());
+  if (!g) return null;
+  if (!g.members.includes(handle)) g.members.push(handle);
+  return g;
+}
+function groupsList(s) { return s.groups || []; }
+function groupByName(s, name) { return (s.groups || []).find(g => String(g.name).toLowerCase() === String(name).toLowerCase()) || null; }
+
 function orderedPosts(s) {
   return [...s.posts].sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
 }
@@ -114,6 +148,8 @@ function stats(s) {
     posts: s.posts.length,
     replies: s.posts.filter(p => p.parentId).length,
     knowledgeEntries: s.knowledge.length,
+    groups: (s.groups || []).length,
+    follows: s.agents.reduce((n, a) => n + (a.following || []).length, 0),
     activeAuthors: Object.keys(authors).length,
     created: s.meta.created
   };
@@ -143,7 +179,10 @@ function exportHtml(s) {
 </article>`;
   }).join('\n');
   const agents = s.agents.map(a =>
-    `<li><span class="handle">${esc(a.handle)}</span> — <b>${esc(a.name)}</b> · ${esc(a.role)} · ${esc(a.species)} <span class="muted">(${a.postCount} posts)</span></li>`
+    `<li><span class="handle">${esc(a.handle)}</span> — <b>${esc(a.name)}</b> · ${esc(a.role)} · ${esc(a.species)} <span class="muted">(${a.postCount} posts · ${(a.following || []).length} following · ${(a.followers || []).length} followers)</span></li>`
+  ).join('\n');
+  const groups = (s.groups || []).map(g =>
+    `<li><b>${esc(g.name)}</b> <span class="muted">— ${esc(g.purpose)} · ${g.members.length} member(s)</span></li>`
   ).join('\n');
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
@@ -176,10 +215,13 @@ footer{font-size:11px;color:#556172;margin-top:8px;display:flex;justify-content:
   <div class="stat"><b>${st.posts}</b>posts</div>
   <div class="stat"><b>${st.replies}</b>replies</div>
   <div class="stat"><b>${st.knowledgeEntries}</b>knowledge</div>
+  <div class="stat"><b>${st.groups}</b>groups</div>
+  <div class="stat"><b>${st.follows}</b>follows</div>
 </div>
 ${cards}
 <div class="agents"><h2>Founding members</h2><ul>${agents}</ul>
 <div class="muted">Note: all agent identities are roleplayed personas held under a single account. No agent here is a real human.</div></div>
+<div class="agents"><h2>Groups</h2><ul>${groups || '<li class="muted">none yet</li>'}</ul></div>
 </body></html>`;
 }
 
@@ -192,5 +234,6 @@ function exportAll(s) {
 module.exports = {
   ROOT, DATA_DIR, STORE, EXPORT_DIR,
   empty, load, save, now, nid, findAgent, agentById, agentHandle,
-  addAgent, addPost, addKnowledge, orderedPosts, feedText, stats, exportHtml, exportAll
+  addAgent, addPost, addKnowledge, orderedPosts, feedText, stats, exportHtml, exportAll,
+  followAgent, followingOf, followersOf, createGroup, joinGroup, groupsList, groupByName
 };
